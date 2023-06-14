@@ -60,16 +60,28 @@ function reconcileChildren(wipFiber, elements) {
   }
 }
 
-function performUnitOfWork(fiber) {
-  // add dom node
-  const { dom, props } = fiber;
-  if (!dom) {
+function updateFunctionComponent(fiber) {
+  const children = [fiber.type(fiber.props)];
+  reconcileChildren(fiber, children);
+}
+
+function updateHostComponent(fiber) {
+  if (!fiber.dom) {
     fiber.dom = createDom(fiber);
   }
+  reconcileChildren(fiber, fiber.props.children);
+}
 
-  // create new fiber
-  const elements = props.children;
-  reconcileChildren(fiber, elements);
+function performUnitOfWork(fiber) {
+  // add dom node
+  const { dom, props, type } = fiber;
+
+  const isFunctionComponent = type instanceof Function;
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber);
+  } else {
+    updateHostComponent(fiber);
+  }
 
   // return next unit of work
   if (fiber.child) {
@@ -183,17 +195,33 @@ function updateDom(dom, prevProps, nextProps) {
   }
 }
 
+function commitDeletion(fiber, domParent) {
+  if (fiber.dom) {
+    domParent.removeChild(fiber.dom);
+  } else {
+    commitDeletion(fiber.child, domParent);
+  }
+}
+
 function commitWork(fiber) {
   if (!fiber) {
     return;
   }
-  const domParent = fiber.parent.dom;
+
+  let domParentFiber = fiber.parent;
+
+  while (!domParentFiber.dom) {
+    // 函数组件没有 DOM 节点，在实际的 DOM 寻找父子节点等操作中需要被跳过。
+    domParentFiber = domParentFiber.parent;
+  }
+
+  const domParent = domParentFiber.dom;
   if (fiber.effectTag === 'PLACEMENT' && fiber.dom !== null) {
     domParent.appendChild(fiber.dom);
   } else if (fiber.effectTag === 'UPDATE' && fiber.dom !== null) {
     updateDom(fiber.dom, fiber.alternate.props, fiber.props);
   } else if (fiber.effectTag === 'DELETION' && fiber.dom !== null) {
-    domParent.removeChild(fiber.dom);
+    commitDeletion(fiber, domParent);
   }
   commitWork(fiber.child);
   commitWork(fiber.sibling);
@@ -252,6 +280,13 @@ const ReactDOM = {
 
 //加载时调用
 window.onloadstart = App();
+
+function foo(props) {
+  return ReactDOM.createElement('h1', null, 'Hi ', props.name);
+}
+const element = ReactDOM.createElement(App, {
+  name: 'foo',
+});
 
 function App() {
   //渲染内容
