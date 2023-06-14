@@ -2,23 +2,53 @@ let nextUnitOfWork = null;
 // 把修改 DOM 这部分内容记录在 fiber tree 上，通过追踪这颗树来收集所有 DOM 节点的修改（work in progress root）
 let wipRoot = null;
 let currentRoot = null;
+let deletions = null;
 
 /**
  * 协调器 reconcile
+ * 对比新旧节点，根据变化更新节点
  * @param {*} wipFiber
  * @param {*} elements
  */
 function reconcileChildren(wipFiber, elements) {
   let index = 0;
+  let oldFiber = wipFiber.alternate && wipFiber.alternate.children;
   let prevSibling = null;
-  while (index < elements.length) {
+  while (index < elements.length || oldFiber !== null) {
     const element = elements[index];
-    const newFiber = {
-      type: element.type,
-      props: element.props,
-      parent: fiber,
-      dom: null,
-    };
+    let newFiber = null;
+    // 对比标签类型——但React使用 key 这个属性来优化 reconciliation 过程。比如, key 属性可以用来检测 elements 数组中的子组件是否仅仅是更换了位置。
+    const sameType = oldFiber && element && oldFiber.type === element.type;
+
+    if (sameType) {
+      //TODO update the node
+      newFiber = {
+        type: element.type,
+        props: element.props,
+        parent: wipFiber,
+        dom: oldFiber.dom,
+        alternate: oldFiber,
+        effectTag: 'UPDATE',
+      };
+    }
+
+    if (element && !sameType) {
+      //TODO add this node
+      newFiber = {
+        type: element.type,
+        props: element.props,
+        parent: wipFiber,
+        dom: null,
+        alternate: null,
+        effectTag: 'PLACEMENT',
+      };
+    }
+
+    if (oldFiber && !sameType) {
+      //TODO delete the oldFiber's node
+      oldFiber.effectTag = 'DELETION';
+      deletions.push(oldFiber);
+    }
 
     if (index === 0) {
       wipFiber.child = newFiber;
@@ -94,18 +124,84 @@ function createDom(fiber) {
   return dom;
 }
 
+const isEvent = (key) => key.startsWith('on');
+
+function updateDom(dom, prevProps, nextProps) {
+  //remove old or changed event listeners
+  for (const [key, prevValue] of Object.entries(prevProps)) {
+    if (!key.startsWith('on')) {
+      continue;
+    }
+    if (nextProps.hasOwn(key)) {
+      continue;
+    }
+    if (prevValue !== nextProps[key]) {
+      continue;
+    }
+    const eventType = key.toLowerCase().substring(2);
+    dom.removeEventListener(eventType, prevValue);
+  }
+
+  //Add event listeners
+  for (const [key, nextValue] of Object.entries(nextRest)) {
+    if (!key.startsWith('on')) {
+      continue;
+    }
+    if (nextValue === prevProps[key]) {
+      continue;
+    }
+    const eventType = key.toLowerCase().substring(2);
+    dom.addEventListener(eventType, nextValue);
+  }
+
+  //remove old properties
+  const [children, ...rest] = prevProps;
+
+  const attrs = Object.keys(rest).filter(!isEvent);
+
+  for (const key of Object.keys(attrs)) {
+    const hasOwn = nextProps.hasOwn(key);
+
+    if (!hasOwn) {
+      dom[key] = '';
+    }
+  }
+
+  //set new or changed properties
+  const [nextChildren, ...nextRest] = nextProps;
+
+  for (const [key, nextValue] of Object.entries(nextRest)) {
+    const prevValue = prevProps[key];
+
+    if (!key.startsWith('on')) {
+      continue;
+    }
+
+    if (prevValue !== nextValue) {
+      dom[key] = nextValue;
+    }
+  }
+}
+
 function commitWork(fiber) {
   if (!fiber) {
     return;
   }
   const domParent = fiber.parent.dom;
-  domParent.appendChild(fiber.dom);
+  if (fiber.effectTag === 'PLACEMENT' && fiber.dom !== null) {
+    domParent.appendChild(fiber.dom);
+  } else if (fiber.effectTag === 'UPDATE' && fiber.dom !== null) {
+    updateDom(fiber.dom, fiber.alternate.props, fiber.props);
+  } else if (fiber.effectTag === 'DELETION' && fiber.dom !== null) {
+    domParent.removeChild(fiber.dom);
+  }
   commitWork(fiber.child);
   commitWork(fiber.sibling);
 }
 
 function commitRoot() {
-  // add nodes to dom
+  // add/update nodes to dom
+  deletions.forEach(commitWork);
   commitWork(wipRoot.child);
   currentRoot = wipRoot;
   console.info(wipRoot);
@@ -141,7 +237,7 @@ function render(element, container) {
     },
     alternate: currentRoot,
   };
-
+  deletions = [];
   nextUnitOfWork = wipRoot;
 }
 
