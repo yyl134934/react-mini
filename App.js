@@ -12,9 +12,10 @@ let deletions = null;
  */
 function reconcileChildren(wipFiber, elements) {
   let index = 0;
-  let oldFiber = wipFiber.alternate && wipFiber.alternate.children;
+  let oldFiber = wipFiber.alternate && wipFiber.alternate.child;
   let prevSibling = null;
-  while (index < elements.length || oldFiber !== null) {
+
+  while (index < elements.length ?? oldFiber) {
     const element = elements[index];
     let newFiber = null;
     // 对比标签类型——但React使用 key 这个属性来优化 reconciliation 过程。比如, key 属性可以用来检测 elements 数组中的子组件是否仅仅是更换了位置。
@@ -50,9 +51,15 @@ function reconcileChildren(wipFiber, elements) {
       deletions.push(oldFiber);
     }
 
+    if (oldFiber) {
+      oldFiber = oldFiber.sibling;
+    }
+
     if (index === 0) {
       wipFiber.child = newFiber;
     } else {
+      console.info('element：', element);
+      console.info('sameType：', sameType);
       prevSibling.sibling = newFiber;
     }
     prevSibling = newFiber;
@@ -60,8 +67,45 @@ function reconcileChildren(wipFiber, elements) {
   }
 }
 
+let wipFiber = null;
+let hookIndex = null;
+
+function useState(initial) {
+  const oldHook = wipFiber?.alternate?.hooks[hookIndex];
+  const hook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: [],
+  };
+
+  const actions = oldHook ? oldHook.queue : [];
+  actions.forEach((action) => {
+    hook.state = action(hook.state);
+  });
+
+  const setState = (action) => {
+    hook.queue.push(action);
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot,
+    };
+    nextUnitOfWork = wipRoot;
+    deletions = [];
+  };
+
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+
+  return [hook.state, setState];
+}
+
 function updateFunctionComponent(fiber) {
+  wipFiber = fiber;
+  hookIndex = 0;
+  wipFiber.hooks = [];
+
   const children = [fiber.type(fiber.props)];
+
   reconcileChildren(fiber, children);
 }
 
@@ -69,6 +113,7 @@ function updateHostComponent(fiber) {
   if (!fiber.dom) {
     fiber.dom = createDom(fiber);
   }
+
   reconcileChildren(fiber, fiber.props.children);
 }
 
@@ -133,6 +178,8 @@ function createDom(fiber) {
     dom[key] = value;
   }
 
+  updateDom(dom, {}, fiber.props);
+
   return dom;
 }
 
@@ -144,7 +191,7 @@ function updateDom(dom, prevProps, nextProps) {
     if (!key.startsWith('on')) {
       continue;
     }
-    if (nextProps.hasOwn(key)) {
+    if (nextProps.hasOwnProperty(key)) {
       continue;
     }
     if (prevValue !== nextProps[key]) {
@@ -155,7 +202,7 @@ function updateDom(dom, prevProps, nextProps) {
   }
 
   //Add event listeners
-  for (const [key, nextValue] of Object.entries(nextRest)) {
+  for (const [key, nextValue] of Object.entries(nextProps)) {
     if (!key.startsWith('on')) {
       continue;
     }
@@ -167,12 +214,12 @@ function updateDom(dom, prevProps, nextProps) {
   }
 
   //remove old properties
-  const [children, ...rest] = prevProps;
+  const { children, ...rest } = prevProps;
 
-  const attrs = Object.keys(rest).filter(!isEvent);
+  const attrs = Object.keys(rest).filter((key) => !isEvent(key));
 
   for (const key of Object.keys(attrs)) {
-    const hasOwn = nextProps.hasOwn(key);
+    const hasOwn = nextProps.hasOwnProperty(key);
 
     if (!hasOwn) {
       dom[key] = '';
@@ -180,12 +227,12 @@ function updateDom(dom, prevProps, nextProps) {
   }
 
   //set new or changed properties
-  const [nextChildren, ...nextRest] = nextProps;
+  const { children: nextChildren, ...nextRest } = nextProps;
 
   for (const [key, nextValue] of Object.entries(nextRest)) {
     const prevValue = prevProps[key];
 
-    if (!key.startsWith('on')) {
+    if (key.startsWith('on')) {
       continue;
     }
 
@@ -276,6 +323,7 @@ requestIdleCallback(workLoop);
 const ReactDOM = {
   createElement,
   render,
+  useState,
 };
 
 //加载时调用
@@ -288,6 +336,11 @@ const element = ReactDOM.createElement(App, {
   name: 'foo',
 });
 
+function Counter() {
+  const [count, setCount] = ReactDOM.useState(0);
+
+  return ReactDOM.createElement('button', { onClick: () => setCount((prev) => prev + 1) }, count);
+}
 function App() {
   //渲染内容
   // <div title='mini react'>
@@ -313,7 +366,18 @@ function App() {
       ReactDOM.createElement('span', null, '我是秦始皇！'),
       ReactDOM.createElement('a', { href: '#' }, '打钱！'),
     ),
+    ReactDOM.createElement('h1', null, '查收'),
+    ReactDOM.createElement(
+      'div',
+      null,
+      ReactDOM.createElement('span', null, '快快快，查收！'),
+      ReactDOM.createElement('span', null, '哎哟！竟然赚了'),
+      ReactDOM.createElement(Counter, null),
+      ReactDOM.createElement('span', null, '个小目标！'),
+    ),
   );
+
+  // const element = ReactDOM.createElement(Counter, null);
 
   const container = document.getElementById('root');
   ReactDOM.render(element, container);
