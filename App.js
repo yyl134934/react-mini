@@ -1,9 +1,35 @@
+const TEXT_ELEMENT = 'TEXT_ELEMENT';
+function createTextElement(text) {
+  return { type: TEXT_ELEMENT, props: { nodeValue: text, children: [] } };
+}
+
 function createElement(type, props, ...children) {
-  return { type, props: { ...props, children } };
+  return {
+    type,
+    props: {
+      ...props,
+      children: children.map((child) => (typeof child === 'object' ? child : createTextElement(child))),
+    },
+  };
 }
 
 function render(elements, container) {
-  //TODO 渲染节点
+  //TODO 创建dom节点
+  const {
+    type,
+    props: { children, nodeVlaue = '', ...attrs },
+  } = elements;
+  const dom = type === TEXT_ELEMENT ? document.createTextNode(nodeVlaue) : document.createElement(type);
+  //TODO 添加属性
+  for (const [key, value] of Object.entries(attrs)) {
+    dom[key] = value;
+  }
+  //TODO 添加子节点
+  for (const child of children) {
+    render(child, dom);
+  }
+  //TODO 将dom节点添加到根节点
+  container.appendChild(dom);
 }
 
 //库
