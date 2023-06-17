@@ -29,3 +29,8 @@
   1. 把element转换成dom节点，并添加到dom树
   2. 为该 fiber 节点的子节点新建 fiber
   3. 挑选出下一个工作单元
+
+#### 步骤五：Render和Commit Phases
+
+- 把修改dom节点环节，从perform环节抽出，放到整个fiber树修改完之后进行
+- 再依据fiber树的记录，完成dom树的修改

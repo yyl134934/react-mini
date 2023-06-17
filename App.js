@@ -1,4 +1,6 @@
 let nextUnitOfWork = null;
+// 我们把修改 DOM 这部分内容记录在 fiber tree 上，通过追踪这颗树来收集所有 DOM 节点的修改，这棵树叫做 wipRoot（work in progress root）。
+let wipRoot = null;
 
 function createDom(fiber) {
   // 创建dom节点
@@ -19,10 +21,6 @@ function performUnitOfWork(fiber) {
   //TODO 新建dom
   if (!fiber.dom) {
     fiber.dom = createDom(fiber);
-  }
-
-  if (fiber.parent) {
-    fiber.parent.dom.appendChild(fiber.dom);
   }
 
   //TODO 新建Fiber
@@ -65,6 +63,24 @@ function performUnitOfWork(fiber) {
   }
 }
 
+function commitWork(fiber) {
+  if (!fiber) {
+    return;
+  }
+
+  const domParent = fiber.parent.dom;
+
+  domParent.appendChild(fiber.dom);
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
+}
+
+function commitRoot() {
+  //TODO 修改dom树
+  commitWork(wipRoot.child);
+  wipRoot = null;
+}
+
 function workLoop(deadline) {
   let shouldYield = false;
 
@@ -73,6 +89,10 @@ function workLoop(deadline) {
 
     //判断离浏览器再次拿回控制权还有多少时间
     shouldYield = deadline.timeRemaining() < 1;
+  }
+
+  if (!nextUnitOfWork && wipRoot) {
+    commitRoot();
   }
 
   requestIdleCallback(workLoop);
@@ -102,6 +122,8 @@ function render(element, container) {
       children: [element],
     },
   };
+
+  wipRoot = nextUnitOfWork;
 
   requestIdleCallback(workLoop);
 }
