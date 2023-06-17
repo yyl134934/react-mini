@@ -80,18 +80,35 @@ function reconcileChildren(wipFiber, elements) {
   }
 }
 
-function performUnitOfWork(fiber) {
-  // 新建dom
+function updateFunctionComponent(fiber) {
+  // 处理函数组件
+  const children = [fiber.type(fiber.props)];
+  reconcileChildren(fiber, children);
+}
+
+function updateHostComponent(fiber) {
   if (!fiber.dom) {
     fiber.dom = createDom(fiber);
   }
 
-  // 新建Fiber
   const {
     props: { children: elements },
   } = fiber;
 
   reconcileChildren(fiber, elements);
+}
+
+function performUnitOfWork(fiber) {
+  // 新建dom
+  //判断是否为函数组件
+  const isFunctionComponent = fiber.type instanceof Function;
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber);
+  } else {
+    updateHostComponent(fiber);
+  }
+
+  // 新建Fiber
 
   // 返回下一个工作单元
   if (fiber.child) {
@@ -154,7 +171,13 @@ function commitWork(fiber) {
     return;
   }
 
-  const domParent = fiber.parent.dom;
+  let domParentFiber = fiber.parent;
+
+  while (!domParentFiber.dom) {
+    domParentFiber = domParentFiber.parent;
+  }
+
+  const domParent = domParentFiber.dom;
   if (fiber.effectTag === effectTags.PLACEMENT && fiber.dom !== null) {
     domParent.appendChild(fiber.dom);
   } else if (fiber.effectTag === effectTags.UPDATE && fiber.dom !== null) {
@@ -235,6 +258,10 @@ const ReactDOM = {
 //加载时调用
 window.onloadstart = App();
 
+function FunctionComponent() {
+  return React.createElement('h1', null, '我！秦始皇！打钱！');
+}
+
 function App() {
   //渲染内容
   // <div title='mini react'>
@@ -248,6 +275,7 @@ function App() {
     React.createElement('h1', null, '纳贤'),
     React.createElement('span', null, '为了世界和平！'),
     React.createElement('a', { href: '#' }, '加入我们！'),
+    React.createElement(FunctionComponent, null),
   );
 
   const container = document.getElementById('root');
