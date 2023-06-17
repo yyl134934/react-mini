@@ -1,7 +1,68 @@
-const nextUnitOfWork = null;
+let nextUnitOfWork = null;
 
-function performUnitOfWork(nextUnitOfWork) {
-  //TODO
+function createDom(fiber) {
+  // 创建dom节点
+  const {
+    type,
+    props: { children, nodeVlaue = '', ...attrs },
+  } = fiber;
+  const dom = type === TEXT_ELEMENT ? document.createTextNode(nodeVlaue) : document.createElement(type);
+  // 添加属性
+  for (const [key, value] of Object.entries(attrs)) {
+    dom[key] = value;
+  }
+  // 返回dom节点
+  return dom;
+}
+
+function performUnitOfWork(fiber) {
+  //TODO 新建dom
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber);
+  }
+
+  if (fiber.parent) {
+    fiber.parent.dom.appendChild(fiber.dom);
+  }
+
+  //TODO 新建Fiber
+  let prevSibling = null;
+  const {
+    props: { children: elements },
+  } = fiber;
+
+  for (const index in elements) {
+    const { type, props } = elements[index];
+
+    const newFiber = {
+      type: type,
+      dom: null,
+      parent: fiber,
+      props: props,
+    };
+
+    if (index == 0) {
+      fiber.child = newFiber;
+    } else {
+      prevSibling.sibling = newFiber;
+    }
+
+    prevSibling = newFiber;
+  }
+
+  //TODO 返回下一个工作单元
+  if (fiber.child) {
+    return fiber.child;
+  }
+
+  let nextFiber = fiber;
+  while (nextFiber) {
+    // 取兄弟节点或者叔伯节点
+    if (nextFiber.sibling) {
+      return nextFiber.sibling;
+    }
+    nextFiber = nextFiber.parent;
+  }
 }
 
 function workLoop(deadline) {
@@ -33,23 +94,16 @@ function createElement(type, props, ...children) {
   };
 }
 
-function render(elements, container) {
-  //TODO 创建dom节点
-  const {
-    type,
-    props: { children, nodeVlaue = '', ...attrs },
-  } = elements;
-  const dom = type === TEXT_ELEMENT ? document.createTextNode(nodeVlaue) : document.createElement(type);
-  //TODO 添加属性
-  for (const [key, value] of Object.entries(attrs)) {
-    dom[key] = value;
-  }
-  //TODO 添加子节点
-  for (const child of children) {
-    render(child, dom);
-  }
-  //TODO 将dom节点添加到根节点
-  container.appendChild(dom);
+function render(element, container) {
+  // 设置下一个工作单元/初始工作单元
+  nextUnitOfWork = {
+    dom: container,
+    props: {
+      children: [element],
+    },
+  };
+
+  requestIdleCallback(workLoop);
 }
 
 //库
