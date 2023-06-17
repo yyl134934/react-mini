@@ -1,4 +1,24 @@
+const nextUnitOfWork = null;
+
+function performUnitOfWork(nextUnitOfWork) {
+  //TODO
+}
+
+function workLoop(deadline) {
+  let shouldYield = false;
+
+  while (nextUnitOfWork && !shouldYield) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+
+    //判断离浏览器再次拿回控制权还有多少时间
+    shouldYield = deadline.timeRemaining() < 1;
+  }
+
+  requestIdleCallback(workLoop);
+}
+
 const TEXT_ELEMENT = 'TEXT_ELEMENT';
+
 function createTextElement(text) {
   return { type: TEXT_ELEMENT, props: { nodeValue: text, children: [] } };
 }
