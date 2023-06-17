@@ -1,6 +1,13 @@
 let nextUnitOfWork = null;
 // 我们把修改 DOM 这部分内容记录在 fiber tree 上，通过追踪这颗树来收集所有 DOM 节点的修改，这棵树叫做 wipRoot（work in progress root）。
 let wipRoot = null;
+let currentRoot = null;
+let deletions = null;
+const effectTags = {
+  UPDATE: 'UPDATE',
+  PLACEMENT: 'PLACEMENT',
+  DELETION: 'DELETION',
+};
 
 function createDom(fiber) {
   // 创建dom节点
@@ -17,38 +24,76 @@ function createDom(fiber) {
   return dom;
 }
 
-function performUnitOfWork(fiber) {
-  //TODO 新建dom
-  if (!fiber.dom) {
-    fiber.dom = createDom(fiber);
-  }
-
-  //TODO 新建Fiber
+function reconcileChildren(wipFiber, elements) {
+  let index = 0;
   let prevSibling = null;
-  const {
-    props: { children: elements },
-  } = fiber;
+  const oldFiber = wipFiber?.alternate?.child;
 
-  for (const index in elements) {
-    const { type, props } = elements[index];
+  while (index < elements.length || oldFiber) {
+    const { type, props } = elements[index] || {};
 
-    const newFiber = {
-      type: type,
-      dom: null,
-      parent: fiber,
-      props: props,
-    };
+    let newFiber = null;
+
+    // 对比新旧节点之间的差别
+    const sameType = oldFiber && type && oldFiber.type === type;
+
+    if (sameType) {
+      // 相同更新
+      newFiber = {
+        type: type,
+        dom: null,
+        parent: wipFiber,
+        props: props,
+        alternate: oldFiber,
+        effectTag: effectTags.UPDATE,
+      };
+    }
+
+    if (type && !sameType) {
+      // 不同新增
+      newFiber = {
+        type: type,
+        dom: null,
+        parent: wipFiber,
+        props: props,
+        alternate: null,
+        effectTag: effectTags.PLACEMENT,
+      };
+    }
+
+    if (oldFiber && !sameType) {
+      // 旧树有，新树无，删除
+      oldFiber.effectTag = effectTags.DELETION;
+      deletions.push(oldFiber);
+    }
 
     if (index == 0) {
-      fiber.child = newFiber;
+      wipFiber.child = newFiber;
     } else {
+      console.info('prevSibling', prevSibling);
+      console.info('newFiber', newFiber);
       prevSibling.sibling = newFiber;
     }
 
     prevSibling = newFiber;
+    index++;
+  }
+}
+
+function performUnitOfWork(fiber) {
+  // 新建dom
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber);
   }
 
-  //TODO 返回下一个工作单元
+  // 新建Fiber
+  const {
+    props: { children: elements },
+  } = fiber;
+
+  reconcileChildren(fiber, elements);
+
+  // 返回下一个工作单元
   if (fiber.child) {
     return fiber.child;
   }
@@ -63,21 +108,70 @@ function performUnitOfWork(fiber) {
   }
 }
 
+const isEvent = (key) => key.startsWith('on');
+const isProperty = (key) => key !== 'children' && !isEvent(key);
+const isNew = (prev, next) => (key) => prev[key] !== next[key];
+const isGone = (prev, next) => (key) => !(key in next);
+
+function updateDom(dom, prevProps, nextProps) {
+  //移除旧的事件监听
+  Object.keys(prevProps)
+    .filter(isEvent)
+    .filter((key) => key in nextProps || isNew(prevProps, nextProps)(key))
+    .forEach((name) => {
+      const eventType = name.toLowerCase().substring(2);
+      dom.removeEventListener(eventType, prevProps[name]);
+    });
+
+  // 添加新的事件监听
+  Object.keys(nextProps)
+    .filter(isEvent)
+    .filter(isNew(prevProps, nextProps))
+    .forEach((name) => {
+      const eventType = name.toLowerCase().substring(2);
+      dom.addEventListener(eventType, nextProps[name]);
+    });
+
+  // 移除旧配置
+  Object.keys(prevProps)
+    .filter(isProperty)
+    .filter(isGone(prevProps, nextProps))
+    .forEach((name) => {
+      dom[name] = '';
+    });
+
+  // 新增新配置
+  Object.keys(nextProps)
+    .filter(isProperty)
+    .filter(isNew(prevProps, nextProps))
+    .forEach((name) => {
+      dom[name] = nextProps[name];
+    });
+}
+
 function commitWork(fiber) {
   if (!fiber) {
     return;
   }
 
   const domParent = fiber.parent.dom;
-
-  domParent.appendChild(fiber.dom);
+  if (fiber.effectTag === effectTags.PLACEMENT && fiber.dom !== null) {
+    domParent.appendChild(fiber.dom);
+  } else if (fiber.effectTag === effectTags.UPDATE && fiber.dom !== null) {
+    const { dom, alternate, props } = fiber;
+    updateDom(dom, alternate, props);
+  } else if (fiber.effectTag === effectTags.DELETION) {
+    domParent.removeChild(fiber.dom);
+  }
   commitWork(fiber.child);
   commitWork(fiber.sibling);
 }
 
 function commitRoot() {
-  //TODO 修改dom树
+  // 修改dom树
+  deletions.forEach(commitWork);
   commitWork(wipRoot.child);
+  currentRoot = wipRoot;
   wipRoot = null;
 }
 
@@ -116,21 +210,25 @@ function createElement(type, props, ...children) {
 
 function render(element, container) {
   // 设置下一个工作单元/初始工作单元
-  nextUnitOfWork = {
+  wipRoot = {
     dom: container,
     props: {
       children: [element],
     },
+    // 存储旧的fiber树
+    alternate: currentRoot,
   };
-
-  wipRoot = nextUnitOfWork;
+  deletions = [];
+  nextUnitOfWork = wipRoot;
 
   requestIdleCallback(workLoop);
 }
 
 //库
-const ReactDOM = {
+const React = {
   createElement,
+};
+const ReactDOM = {
   render,
 };
 
@@ -144,12 +242,12 @@ function App() {
   //   <span>为了世界和平！</span>
   //   <a href='#'>加入我们！</a>
   // </div>;
-  const element = ReactDOM.createElement(
+  const element = React.createElement(
     'div',
     { title: 'mini react' },
-    ReactDOM.createElement('h1', null, '纳贤'),
-    ReactDOM.createElement('span', null, '为了世界和平！'),
-    ReactDOM.createElement('a', { href: '#' }, '加入我们！'),
+    React.createElement('h1', null, '纳贤'),
+    React.createElement('span', null, '为了世界和平！'),
+    React.createElement('a', { href: '#' }, '加入我们！'),
   );
 
   const container = document.getElementById('root');

@@ -34,3 +34,7 @@
 
 - 把修改dom节点环节，从perform环节抽出，放到整个fiber树修改完之后进行
 - 再依据fiber树的记录，完成dom树的修改
+
+#### 步骤六：Reconciliation协调器
+
+- 在Reconciliation协调器中完成对新旧Fiber树的对比更新
