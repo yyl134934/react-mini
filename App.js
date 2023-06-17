@@ -3,6 +3,10 @@ let nextUnitOfWork = null;
 let wipRoot = null;
 let currentRoot = null;
 let deletions = null;
+// 当前正在处理的Fiber
+let wipFiber = null;
+// hook计数索引
+let hookIndex = null;
 const effectTags = {
   UPDATE: 'UPDATE',
   PLACEMENT: 'PLACEMENT',
@@ -13,13 +17,11 @@ function createDom(fiber) {
   // 创建dom节点
   const {
     type,
-    props: { children, nodeVlaue = '', ...attrs },
+    props: { nodeVlaue },
   } = fiber;
   const dom = type === TEXT_ELEMENT ? document.createTextNode(nodeVlaue) : document.createElement(type);
   // 添加属性
-  for (const [key, value] of Object.entries(attrs)) {
-    dom[key] = value;
-  }
+  updateDom(dom, {}, fiber.props);
   // 返回dom节点
   return dom;
 }
@@ -27,21 +29,22 @@ function createDom(fiber) {
 function reconcileChildren(wipFiber, elements) {
   let index = 0;
   let prevSibling = null;
-  const oldFiber = wipFiber?.alternate?.child;
+  let oldFiber = wipFiber?.alternate?.child;
 
   while (index < elements.length || oldFiber) {
-    const { type, props } = elements[index] || {};
+    const element = elements[index];
+    const { type, props } = element;
 
     let newFiber = null;
 
     // 对比新旧节点之间的差别
-    const sameType = oldFiber && type && oldFiber.type === type;
+    const sameType = oldFiber && element && oldFiber.type === type;
 
     if (sameType) {
       // 相同更新
       newFiber = {
         type: type,
-        dom: null,
+        dom: oldFiber.dom,
         parent: wipFiber,
         props: props,
         alternate: oldFiber,
@@ -49,7 +52,7 @@ function reconcileChildren(wipFiber, elements) {
       };
     }
 
-    if (type && !sameType) {
+    if (element && !sameType) {
       // 不同新增
       newFiber = {
         type: type,
@@ -67,11 +70,13 @@ function reconcileChildren(wipFiber, elements) {
       deletions.push(oldFiber);
     }
 
+    if (oldFiber) {
+      oldFiber = oldFiber.sibling;
+    }
+
     if (index == 0) {
       wipFiber.child = newFiber;
-    } else {
-      console.info('prevSibling', prevSibling);
-      console.info('newFiber', newFiber);
+    } else if (element) {
       prevSibling.sibling = newFiber;
     }
 
@@ -80,18 +85,66 @@ function reconcileChildren(wipFiber, elements) {
   }
 }
 
-function performUnitOfWork(fiber) {
-  // 新建dom
+function useState(initail) {
+  const oldHook = wipFiber?.alternate?.hooks[hookIndex];
+
+  const hook = { state: oldHook?.state ?? initail, queue: [] };
+
+  const actions = oldHook?.queue || [];
+  for (const action of actions) {
+    hook.state = action(hook.state);
+  }
+
+  const setState = (action) => {
+    hook.queue.push(action);
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot,
+    };
+    nextUnitOfWork = wipRoot;
+    deletions = [];
+  };
+
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+
+  return [hook.state, setState];
+}
+
+function updateFunctionComponent(fiber) {
+  //初始化hooks相关参数
+  wipFiber = fiber;
+  hookIndex = 0;
+  wipFiber.hooks = [];
+  // 处理函数组件
+  const children = [fiber.type(fiber.props)];
+  reconcileChildren(fiber, children);
+}
+
+function updateHostComponent(fiber) {
   if (!fiber.dom) {
     fiber.dom = createDom(fiber);
   }
 
-  // 新建Fiber
   const {
     props: { children: elements },
   } = fiber;
 
   reconcileChildren(fiber, elements);
+}
+
+function performUnitOfWork(fiber) {
+  // 新建dom
+  //判断是否为函数组件
+  const isFunctionComponent = fiber.type instanceof Function;
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber);
+  } else {
+    updateHostComponent(fiber);
+  }
+
+  // 新建Fiber
 
   // 返回下一个工作单元
   if (fiber.child) {
@@ -132,7 +185,7 @@ function updateDom(dom, prevProps, nextProps) {
       dom.addEventListener(eventType, nextProps[name]);
     });
 
-  // 移除旧配置
+  // 移除旧属性
   Object.keys(prevProps)
     .filter(isProperty)
     .filter(isGone(prevProps, nextProps))
@@ -140,7 +193,7 @@ function updateDom(dom, prevProps, nextProps) {
       dom[name] = '';
     });
 
-  // 新增新配置
+  // 新增新属性
   Object.keys(nextProps)
     .filter(isProperty)
     .filter(isNew(prevProps, nextProps))
@@ -149,20 +202,33 @@ function updateDom(dom, prevProps, nextProps) {
     });
 }
 
+function commitDeletion(fiber, domParent) {
+  if (fiber.dom) {
+    domParent.removeChild(fiber.dom);
+  } else {
+    commitDeletion(fiber.child, domParent);
+  }
+}
+
 function commitWork(fiber) {
   if (!fiber) {
     return;
   }
 
-  const domParent = fiber.parent.dom;
+  let domParentFiber = fiber.parent;
+  while (!domParentFiber.dom) {
+    domParentFiber = domParentFiber.parent;
+  }
+  const domParent = domParentFiber.dom;
+
   if (fiber.effectTag === effectTags.PLACEMENT && fiber.dom !== null) {
     domParent.appendChild(fiber.dom);
   } else if (fiber.effectTag === effectTags.UPDATE && fiber.dom !== null) {
-    const { dom, alternate, props } = fiber;
-    updateDom(dom, alternate, props);
+    updateDom(fiber.dom, fiber.alternate.props, fiber.props);
   } else if (fiber.effectTag === effectTags.DELETION) {
-    domParent.removeChild(fiber.dom);
+    commitDeletion(fiber, domParent);
   }
+
   commitWork(fiber.child);
   commitWork(fiber.sibling);
 }
@@ -227,6 +293,7 @@ function render(element, container) {
 //库
 const React = {
   createElement,
+  useState,
 };
 const ReactDOM = {
   render,
@@ -235,6 +302,23 @@ const ReactDOM = {
 //加载时调用
 window.onloadstart = App();
 
+function Counter() {
+  const [count, setCount] = React.useState(0);
+
+  // <button onClick={() => setCount((prev) => prev + 1)}>count</button>;
+  return React.createElement(
+    'button',
+    {
+      onClick: () => setCount((prev) => prev + 1),
+    },
+    count,
+  );
+}
+
+function FunctionComponent() {
+  return React.createElement('h1', null, '我！秦始皇！打钱！');
+}
+
 function App() {
   //渲染内容
   // <div title='mini react'>
@@ -242,13 +326,16 @@ function App() {
   //   <span>为了世界和平！</span>
   //   <a href='#'>加入我们！</a>
   // </div>;
-  const element = React.createElement(
-    'div',
-    { title: 'mini react' },
-    React.createElement('h1', null, '纳贤'),
-    React.createElement('span', null, '为了世界和平！'),
-    React.createElement('a', { href: '#' }, '加入我们！'),
-  );
+  // const element = React.createElement(
+  //   'div',
+  //   { title: 'mini react' },
+  //   React.createElement('h1', null, '纳贤'),
+  //   React.createElement('span', null, '为了世界和平！'),
+  //   React.createElement('a', { href: '#' }, '加入我们！'),
+  //   React.createElement(FunctionComponent, null),
+  //   React.createElement(Counter, null),
+  // );
+  const element = React.createElement(Counter, null);
 
   const container = document.getElementById('root');
   ReactDOM.render(element, container);
