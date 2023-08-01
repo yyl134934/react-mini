@@ -86,7 +86,7 @@ function reconcileChildren(wipFiber, elements) {
 }
 
 function useState(initail) {
-  const oldHook = wipFiber?.alternate?.hooks[hookIndex];
+  const oldHook = wipFiber?.alternate?.hooks?.shift();
 
   const hook = { state: oldHook?.state ?? initail, queue: [] };
 
@@ -107,18 +107,52 @@ function useState(initail) {
   };
 
   wipFiber.hooks.push(hook);
-  hookIndex++;
 
   return [hook.state, setState];
 }
 
+function useEffect(action, deps) {
+  const oldHook = wipFiber?.alternate?.effectHooks?.shift();
+  const hook = {
+    unmountAction: oldHook?.unmountAction,
+    deps: oldHook?.deps ?? deps,
+  };
+
+  const hasDepsChanged = () => {
+    if (deps === undefined) {
+      return true;
+    }
+    return hook?.deps?.some((dep, index) => !Object.is(dep, deps[index]));
+  };
+
+  if (!hasInitailized || hasDepsChanged()) {
+    // 在componentDidMount和componentWillUpdate时调用
+    hook.unmountAction = action();
+  }
+
+  wipFiber.effectHooks.push(hook);
+  wipRoot.alternate = currentRoot;
+}
+
+function initializeUseEffect(fiber) {
+  fiber.effectHooks = [];
+}
+
+function initializeUseState(fiber) {
+  fiber.hooks = [];
+}
+
+let hasInitailized = false;
+
 function updateFunctionComponent(fiber) {
-  //初始化hooks相关参数
   wipFiber = fiber;
-  hookIndex = 0;
-  wipFiber.hooks = [];
+  //初始化hooks-useState相关参数
+  initializeUseState(wipFiber);
+  //初始化hooks-useEffect相关参数
+  initializeUseEffect(wipFiber);
   // 处理函数组件
   const children = [fiber.type(fiber.props)];
+  hasInitailized = true;
   reconcileChildren(fiber, children);
 }
 
@@ -204,6 +238,10 @@ function updateDom(dom, prevProps, nextProps) {
 
 function commitDeletion(fiber, domParent) {
   if (fiber.dom) {
+    // 执行unmount action
+    for (const unmountAction of fiber.effectHooks) {
+      unmountAction && unmountAction();
+    }
     domParent.removeChild(fiber.dom);
   } else {
     commitDeletion(fiber.child, domParent);
@@ -294,6 +332,7 @@ function render(element, container) {
 const React = {
   createElement,
   useState,
+  useEffect,
 };
 const ReactDOM = {
   render,
@@ -303,16 +342,45 @@ const ReactDOM = {
 window.onloadstart = App();
 
 function Counter() {
-  const [count, setCount] = React.useState(0);
+  const [targetCount, setTargetCount] = React.useState(1);
+  const [count, setCount] = React.useState(5);
+
+  React.useEffect(() => {
+    console.info('useEffect=>componentDidMount=>componentWillUpdate=>componentWillUnMount');
+    return () => {
+      console.info('useEffect=>componentWillUnMount!');
+    };
+  });
+
+  React.useEffect(() => {
+    console.info('useEffect=>componentDidMount!');
+  }, []);
+
+  React.useEffect(() => {
+    console.info('useEffect=>componentDidMount=>componentWillUpdate:', targetCount, count);
+  }, [targetCount, count]);
 
   // <button onClick={() => setCount((prev) => prev + 1)}>count</button>;
-  return React.createElement(
-    'button',
-    {
-      onClick: () => setCount((prev) => prev + 1),
-    },
-    count,
+  const element = React.createElement(
+    'div',
+    null,
+    React.createElement(
+      'button',
+      {
+        onClick: () => setTargetCount((prev) => prev + 1),
+      },
+      `今年轻轻松松实现${targetCount}个小目标！`,
+    ),
+    React.createElement(
+      'button',
+      {
+        onClick: () => setCount((prev) => prev + 1),
+      },
+      `今年轻轻松松长个${count}斤肉！`,
+    ),
   );
+
+  return element;
 }
 
 function FunctionComponent() {
@@ -335,7 +403,12 @@ function App() {
   //   React.createElement(FunctionComponent, null),
   //   React.createElement(Counter, null),
   // );
-  const element = React.createElement(Counter, null);
+  const element = React.createElement(
+    'div',
+    null,
+    React.createElement(Counter, null),
+    // React.createElement(Counter, null),
+  );
 
   const container = document.getElementById('root');
   ReactDOM.render(element, container);
