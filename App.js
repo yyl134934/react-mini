@@ -92,7 +92,10 @@ function useState(initail) {
 
   const actions = oldHook?.queue || [];
   for (const action of actions) {
-    hook.state = action(hook.state);
+    if (typeof action === 'object' && action instanceof Function) {
+      hook.state = action(hook.state);
+    }
+    hook.state = hook.state;
   }
 
   const setState = (action) => {
