@@ -92,10 +92,11 @@ function useState(initail) {
 
   const actions = oldHook?.queue || [];
   for (const action of actions) {
-    if (typeof action === 'object' && action instanceof Function) {
+    if (typeof action === 'function') {
       hook.state = action(hook.state);
+    } else {
+      hook.state = action;
     }
-    hook.state = hook.state;
   }
 
   const setState = (action) => {
@@ -370,7 +371,7 @@ function Counter() {
     React.createElement(
       'button',
       {
-        onClick: () => setTargetCount((prev) => prev + 1),
+        onClick: () => setTargetCount(5),
       },
       `今年轻轻松松实现${targetCount}个小目标！`,
     ),
