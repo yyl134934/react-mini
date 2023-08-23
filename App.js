@@ -126,7 +126,7 @@ function useEffect(action, deps) {
   };
 
   if (!hasInitailized || hasDepsChanged()) {
-    // 在componentDidMount和componentWillUpdate时调用
+    // 在componentDidMount和componentDidUpdate时调用
     hook.unmountAction = action();
   }
 
@@ -346,7 +346,7 @@ function Counter() {
   const [count, setCount] = React.useState(5);
 
   React.useEffect(() => {
-    console.info('useEffect=>componentDidMount=>componentWillUpdate=>componentWillUnMount');
+    console.info('useEffect=>componentDidMount=>componentDidUpdate=>componentWillUnMount');
     return () => {
       console.info('useEffect=>componentWillUnMount!');
     };
@@ -357,7 +357,7 @@ function Counter() {
   }, []);
 
   React.useEffect(() => {
-    console.info('useEffect=>componentDidMount=>componentWillUpdate:', targetCount, count);
+    console.info('useEffect=>componentDidMount=>componentDidUpdate:', targetCount, count);
   }, [targetCount, count]);
 
   // <button onClick={() => setCount((prev) => prev + 1)}>count</button>;
