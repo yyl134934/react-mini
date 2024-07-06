@@ -92,7 +92,7 @@ function useState(initail) {
 
   const actions = oldHook?.queue || [];
   for (const action of actions) {
-    hook.state = action(hook.state);
+    hook.state = typeof action === 'function' ? action(hook.state) : action;
   }
 
   const setState = (action) => {
@@ -122,7 +122,7 @@ function useEffect(action, deps) {
     if (deps === undefined) {
       return true;
     }
-    return hook?.deps?.some((dep, index) => !Object.is(dep, deps[index]));
+    return hook.deps?.some((dep, index) => !Object.is(dep, deps[index]));
   };
 
   if (!hasInitailized || hasDepsChanged()) {
