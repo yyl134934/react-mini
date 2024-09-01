@@ -116,6 +116,7 @@ function useEffect(action, deps) {
   const hook = {
     unmountAction: oldHook?.unmountAction,
     deps: oldHook?.deps ?? deps,
+    hasInitialized: oldHook?.hasInitialized ?? false
   };
 
   const hasDepsChanged = () => {
@@ -125,9 +126,10 @@ function useEffect(action, deps) {
     return hook.deps?.some((dep, index) => !Object.is(dep, deps[index]));
   };
 
-  if (!hasInitailized || hasDepsChanged()) {
+  if (!hook.hasInitialized || hasDepsChanged()) {
     // 在componentDidMount和componentDidUpdate时调用
     hook.unmountAction = action();
+    hook.hasInitialized = true;
   }
 
   wipFiber.effectHooks.push(hook);
@@ -142,8 +144,6 @@ function initializeUseState(fiber) {
   fiber.hooks = [];
 }
 
-let hasInitailized = false;
-
 function updateFunctionComponent(fiber) {
   wipFiber = fiber;
   //初始化hooks-useState相关参数
@@ -152,7 +152,6 @@ function updateFunctionComponent(fiber) {
   initializeUseEffect(wipFiber);
   // 处理函数组件
   const children = [fiber.type(fiber.props)];
-  hasInitailized = true;
   reconcileChildren(fiber, children);
 }
 
