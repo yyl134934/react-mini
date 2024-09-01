@@ -17,9 +17,9 @@ function createDom(fiber) {
   // 创建dom节点
   const {
     type,
-    props: { nodeVlaue },
+    props: { nodeValue },
   } = fiber;
-  const dom = type === TEXT_ELEMENT ? document.createTextNode(nodeVlaue) : document.createElement(type);
+  const dom = type === TEXT_ELEMENT ? document.createTextNode(nodeValue) : document.createElement(type);
   // 添加属性
   updateDom(dom, {}, fiber.props);
   // 返回dom节点
@@ -85,10 +85,10 @@ function reconcileChildren(wipFiber, elements) {
   }
 }
 
-function useState(initail) {
+function useState(initial) {
   const oldHook = wipFiber?.alternate?.hooks?.shift();
 
-  const hook = { state: oldHook?.state ?? initail, queue: [] };
+  const hook = { state: oldHook?.state ?? initial, queue: [] };
 
   const actions = oldHook?.queue || [];
   for (const action of actions) {
