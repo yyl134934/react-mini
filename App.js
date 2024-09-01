@@ -17,9 +17,13 @@ function createDom(fiber) {
   // 创建dom节点
   const {
     type,
-    props: { nodeValue },
+    props: { nodeValue, ref },
   } = fiber;
   const dom = type === TEXT_ELEMENT ? document.createTextNode(nodeValue) : document.createElement(type);
+  // 添加ref
+  if (ref) {
+    ref.current = typeof ref === 'function' ? ref(dom) : dom;
+  }
   // 添加属性
   updateDom(dom, {}, fiber.props);
   // 返回dom节点
@@ -116,7 +120,7 @@ function useEffect(action, deps) {
   const hook = {
     unmountAction: oldHook?.unmountAction,
     deps: oldHook?.deps ?? deps,
-    hasInitialized: oldHook?.hasInitialized ?? false
+    hasInitialized: oldHook?.hasInitialized ?? false,
   };
 
   const hasDepsChanged = () => {
@@ -136,6 +140,19 @@ function useEffect(action, deps) {
   wipRoot.alternate = currentRoot;
 }
 
+function useRef(initValue) {
+  // 有初始值,返回一个普通的js对象 {current: any}
+  const oldRef = wipFiber?.alternate?.refQueue?.shift();
+  const ref = oldRef ?? { current: initValue === undefined ? null : initValue };
+
+  // 组件更新时，保持引用不变
+  return ref;
+}
+
+function initializeUseRef(fiber) {
+  fiber.refQueue = [];
+}
+
 function initializeUseEffect(fiber) {
   fiber.effectHooks = [];
 }
@@ -150,6 +167,8 @@ function updateFunctionComponent(fiber) {
   initializeUseState(wipFiber);
   //初始化hooks-useEffect相关参数
   initializeUseEffect(wipFiber);
+  //初始化hooks-useEffect相关参数
+  initializeUseRef(wipFiber);
   // 处理函数组件
   const children = [fiber.type(fiber.props)];
   reconcileChildren(fiber, children);
@@ -332,6 +351,7 @@ const React = {
   createElement,
   useState,
   useEffect,
+  useRef,
 };
 const ReactDOM = {
   render,
@@ -340,9 +360,15 @@ const ReactDOM = {
 //加载时调用
 window.onloadstart = App();
 
+function generateRandomHex() {
+  return Math.floor(Math.random() * 0xffffff)
+    .toString(16)
+    .padStart(6, '0');
+}
 function Counter() {
   const [targetCount, setTargetCount] = React.useState(1);
   const [count, setCount] = React.useState(5);
+  const ref = React.useRef(null);
 
   React.useEffect(() => {
     console.info('useEffect=>componentDidMount=>componentDidUpdate=>componentWillUnMount');
@@ -376,6 +402,16 @@ function Counter() {
         onClick: () => setCount((prev) => prev + 1),
       },
       `今年轻轻松松长个${count}斤肉！`,
+    ),
+    React.createElement(
+      'button',
+      {
+        ref: ref,
+        onClick: () => {
+          ref.current.style.backgroundColor = `#${generateRandomHex()}`;
+        },
+      },
+      `useRef实现`,
     ),
   );
 

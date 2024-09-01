@@ -44,7 +44,11 @@
 - 函数组件的不同点在于：
   1. 函数组件的fiber没有DOM节点
   2. 并且子节点由函数组件运行的来，而不是从props属性中获取
-   
 #### 步骤八：添加对Hooks.setState()的支持
+
 #### 步骤九：添加对Hooks.useEffect()的支持
 - 完成componentDidMount、componetWillUpdate以及componentWillUnmount三个周期的正确调用
+
+#### 步骤十：添加对Hooks.useRef()的支持
+- 实现一个ref对象，通过ref.current属性获取DOM节点
+- 保证ref对象在组件更新时，不会被重新创建
